@@ -42,5 +42,6 @@ int fat16_cd(const char *dirname);
 void fat16_pwd();
 int fat16_cat(const char *filename);
 char *strcat(char *dest, const char *src);
+const char* fat16_get_path();
 
 #endif

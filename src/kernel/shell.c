@@ -27,16 +27,14 @@ static int prompt_y = 0;
 static void history_add(const char *cmd);
 static void load_command(const char *cmd);
 
-static void shell_prompt() {
+static void shell_prompt()
+{
 
     print("\nAstraOS@");
     print(fat16_get_path());
     print("$ ");
 
-    prompt_x = 7 + strlen(fat16_get_path()) + 2;  
-    // "AstraOS@" = 7 chars
-    // "$ " = 2 chars
-
+    prompt_x = get_cursor_x();
     prompt_y = get_cursor_y();
 
     cursor_pos = 0;

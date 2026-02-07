@@ -463,3 +463,7 @@ char *strcat(char *dest, const char *src) {
     dest[i] = '\0';
     return dest;
 }
+
+const char* fat16_get_path() {
+    return current_path;
+}
