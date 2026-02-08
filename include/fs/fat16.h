@@ -45,5 +45,9 @@ char *strcat(char *dest, const char *src);
 const char* fat16_get_path();
 int fat16_touch(const char *filename);
 int fat16_mkdir(const char *dirname);
+int fat16_rm(const char *filename);
+int fat16_rmdir(const char *dirname);
+int fat16_exists(const char *name, fat16_dir_entry_t *out);
+int fat16_rmdir(const char *dirname);
 
 #endif

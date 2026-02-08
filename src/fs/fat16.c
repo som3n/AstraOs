@@ -349,6 +349,192 @@ static int fat16_find_free_dir_entry(uint16_t dir_cluster, uint32_t *out_sector,
     return 0;
 }
 
+static void fat16_free_cluster_chain(uint16_t start_cluster)
+{
+    uint16_t cluster = start_cluster;
+
+    while (cluster >= 2 && cluster < 0xFFF8)
+    {
+        uint16_t next = fat16_get_fat_entry(cluster);
+
+        // mark cluster as free
+        fat16_set_fat_entry(cluster, 0x0000);
+
+        cluster = next;
+    }
+}
+
+static int fat16_find_entry_location(uint16_t dir_cluster, const char *name,
+                                     uint32_t *out_sector, uint32_t *out_offset,
+                                     fat16_dir_entry_t *out_entry)
+{
+    char fatname[11];
+    fat16_format_filename(name, fatname);
+
+    uint8_t sector[512];
+
+    // ROOT directory special case
+    if (dir_cluster == 0)
+    {
+        uint32_t root_start = fat16_root_start_sector();
+        uint32_t root_sectors = fat16_root_dir_sectors();
+
+        for (uint32_t s = 0; s < root_sectors; s++)
+        {
+            ata_read_sector(root_start + s, sector);
+
+            for (uint32_t i = 0; i < 512; i += 32)
+            {
+                fat16_dir_entry_t *entry = (fat16_dir_entry_t *)&sector[i];
+
+                if (entry->name[0] == 0x00)
+                    return 0;
+                if ((uint8_t)entry->name[0] == 0xE5)
+                    continue;
+                if (entry->attr == 0x0F)
+                    continue;
+
+                int match = 1;
+
+                for (int j = 0; j < 8; j++)
+                {
+                    if (entry->name[j] != fatname[j])
+                    {
+                        match = 0;
+                        break;
+                    }
+                }
+
+                if (match)
+                {
+                    for (int j = 0; j < 3; j++)
+                    {
+                        if (entry->ext[j] != fatname[8 + j])
+                        {
+                            match = 0;
+                            break;
+                        }
+                    }
+                }
+
+                if (match)
+                {
+                    if (out_sector) *out_sector = root_start + s;
+                    if (out_offset) *out_offset = i;
+                    if (out_entry)  *out_entry = *entry;
+                    return 1;
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    // SUBDIRECTORY
+    uint16_t cluster = dir_cluster;
+
+    while (cluster < 0xFFF8)
+    {
+        uint32_t start_sector = fat16_cluster_to_sector(cluster);
+
+        for (int s = 0; s < bpb.sectors_per_cluster; s++)
+        {
+            ata_read_sector(start_sector + s, sector);
+
+            for (uint32_t i = 0; i < 512; i += 32)
+            {
+                fat16_dir_entry_t *entry = (fat16_dir_entry_t *)&sector[i];
+
+                if (entry->name[0] == 0x00)
+                    return 0;
+                if ((uint8_t)entry->name[0] == 0xE5)
+                    continue;
+                if (entry->attr == 0x0F)
+                    continue;
+
+                int match = 1;
+
+                for (int j = 0; j < 8; j++)
+                {
+                    if (entry->name[j] != fatname[j])
+                    {
+                        match = 0;
+                        break;
+                    }
+                }
+
+                if (match)
+                {
+                    for (int j = 0; j < 3; j++)
+                    {
+                        if (entry->ext[j] != fatname[8 + j])
+                        {
+                            match = 0;
+                            break;
+                        }
+                    }
+                }
+
+                if (match)
+                {
+                    if (out_sector) *out_sector = start_sector + s;
+                    if (out_offset) *out_offset = i;
+                    if (out_entry)  *out_entry = *entry;
+                    return 1;
+                }
+            }
+        }
+
+        cluster = fat16_get_fat_entry(cluster);
+    }
+
+    return 0;
+}
+
+static int fat16_is_dir_empty(uint16_t dir_cluster)
+{
+    uint8_t sector[512];
+    uint16_t cluster = dir_cluster;
+
+    while (cluster < 0xFFF8)
+    {
+        uint32_t start_sector = fat16_cluster_to_sector(cluster);
+
+        for (int s = 0; s < bpb.sectors_per_cluster; s++)
+        {
+            ata_read_sector(start_sector + s, sector);
+
+            for (int i = 0; i < 512; i += 32)
+            {
+                fat16_dir_entry_t *entry = (fat16_dir_entry_t *)&sector[i];
+
+                if (entry->name[0] == 0x00)
+                    return 1; // no more entries
+
+                if ((uint8_t)entry->name[0] == 0xE5)
+                    continue;
+
+                if (entry->attr == 0x0F)
+                    continue;
+
+                // allow "." and ".."
+                if (entry->name[0] == '.' &&
+                    (entry->name[1] == ' ' || entry->name[1] == '.'))
+                {
+                    continue;
+                }
+
+                // something else exists -> not empty
+                return 0;
+            }
+        }
+
+        cluster = fat16_get_fat_entry(cluster);
+    }
+
+    return 1;
+}
+
 /* ------------------- FAT16 Public API ------------------- */
 
 int fat16_init()
@@ -808,6 +994,86 @@ int fat16_mkdir(const char *dirname)
     entry->file_size = 0;
 
     ata_write_sector(free_sector, sector);
+
+    return 1;
+}
+
+int fat16_rm(const char *filename)
+{
+    if (!filename || filename[0] == '\0')
+        return 0;
+
+    uint32_t entry_sector;
+    uint32_t entry_offset;
+    fat16_dir_entry_t entry;
+
+    if (!fat16_find_entry_location(current_dir_cluster, filename,
+                                   &entry_sector, &entry_offset, &entry))
+    {
+        return 0; // not found
+    }
+
+    // cannot rm directory
+    if (entry.attr & 0x10)
+        return -1;
+
+    // free file cluster chain if any
+    if (entry.first_cluster_low != 0)
+        fat16_free_cluster_chain(entry.first_cluster_low);
+
+    // mark directory entry as deleted
+    uint8_t sector[512];
+    ata_read_sector(entry_sector, sector);
+
+    fat16_dir_entry_t *disk_entry = (fat16_dir_entry_t *)&sector[entry_offset];
+    disk_entry->name[0] = 0xE5;
+
+    ata_write_sector(entry_sector, sector);
+
+    return 1;
+}
+
+int fat16_rmdir(const char *dirname)
+{
+    if (!dirname || dirname[0] == '\0')
+        return 0;
+
+    uint32_t entry_sector;
+    uint32_t entry_offset;
+    fat16_dir_entry_t entry;
+
+    // find directory entry in current directory
+    if (!fat16_find_entry_location(current_dir_cluster, dirname,
+                                   &entry_sector, &entry_offset, &entry))
+    {
+        return 0; // not found
+    }
+
+    // must be directory
+    if (!(entry.attr & 0x10))
+        return -1; // not a directory
+
+    uint16_t dir_cluster = entry.first_cluster_low;
+
+    // root cannot be removed
+    if (dir_cluster == 0)
+        return 0;
+
+    // check empty
+    if (!fat16_is_dir_empty(dir_cluster))
+        return -2; // directory not empty
+
+    // free cluster chain
+    fat16_free_cluster_chain(dir_cluster);
+
+    // delete directory entry from parent directory
+    uint8_t sector[512];
+    ata_read_sector(entry_sector, sector);
+
+    fat16_dir_entry_t *disk_entry = (fat16_dir_entry_t *)&sector[entry_offset];
+    disk_entry->name[0] = 0xE5;
+
+    ata_write_sector(entry_sector, sector);
 
     return 1;
 }

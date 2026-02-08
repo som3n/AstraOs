@@ -95,6 +95,8 @@ static void shell_execute(char *cmd)
         print("cat      - Display file contents\n");
         print("touch    - Create empty file\n");
         print("mkdir    - Create directory\n");
+        print("rm       - Delete a file\n");
+        print("rmdir    - Remove empty directory\n");
         print("diskread - Read disk sector 0 (test)\n");
         print("disktest - Write + read test sector\n");
         print("fatinfo  - Show FAT16 boot sector info\n");
@@ -379,6 +381,54 @@ static void shell_execute(char *cmd)
             print("\nDirectory created.\n");
         else
             print("\nmkdir failed.\n");
+    }
+    else if (strcmp(cmd, "rm") == 0)
+    {
+        if (!args)
+        {
+            print("\nUsage: rm <filename>\n");
+            return;
+        }
+
+        if (!fat16_init())
+        {
+            print("\nFAT16 init failed.\n");
+            return;
+        }
+
+        int result = fat16_rm(args);
+
+        if (result == 1)
+            print("\nFile deleted.\n");
+        else if (result == -1)
+            print("\nrm does not work on directories. Use rmdir.\n");
+        else
+            print("\nrm failed.\n");
+    }
+    else if (strcmp(cmd, "rmdir") == 0)
+    {
+        if (!args)
+        {
+            print("\nUsage: rmdir <dirname>\n");
+            return;
+        }
+
+        if (!fat16_init())
+        {
+            print("\nFAT16 init failed.\n");
+            return;
+        }
+
+        int result = fat16_rmdir(args);
+
+        if (result == 1)
+            print("\nDirectory removed.\n");
+        else if (result == -1)
+            print("\nrmdir works only on directories.\n");
+        else if (result == -2)
+            print("\nrmdir failed: directory not empty.\n");
+        else
+            print("\nrmdir failed.\n");
     }
 
     else if (cmd[0] == '\0')
