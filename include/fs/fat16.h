@@ -49,15 +49,5 @@ int fat16_rm(const char *filename);
 int fat16_rmdir(const char *dirname);
 int fat16_exists(const char *name, fat16_dir_entry_t *out);
 int fat16_rmdir(const char *dirname);
-int fat16_write(const char *filename, const uint8_t *data, uint32_t size);
-int fat16_append(const char *filename, const uint8_t *data, uint32_t size);
-int fat16_mv(const char *oldname, const char *newname);
-int fat16_cp(const char *src, const char *dst);
-int fat16_mkdir_p(const char *path);
-int fat16_rmdir_r(const char *dirname);
-int fat16_cd_path(const char *path);
-int fat16_ls_path(const char *path);
-int fat16_cp_path(const char *srcpath, const char *dstpath);
-int fat16_mv_path(const char *srcpath, const char *dstpath);
 
 #endif

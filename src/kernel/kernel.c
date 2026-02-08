@@ -8,7 +8,6 @@
 #include "cpu/timer.h"
 #include "shell.h"
 #include "memory/kmalloc.h"
-#include "kernel/syscall.h"
 
 void kernel_main() {
     clear_screen();
@@ -19,9 +18,6 @@ void kernel_main() {
     pic_remap();
 
     irq_install();
-
-    syscall_init();
-
 
     timer_init(100);
     keyboard_init();

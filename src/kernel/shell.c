@@ -97,10 +97,6 @@ static void shell_execute(char *cmd)
         print("mkdir    - Create directory\n");
         print("rm       - Delete a file\n");
         print("rmdir    - Remove empty directory\n");
-        print("write    - Write text to a file\n");
-        print("append   - Append text to a file\n");
-        print("mv       - Rename file or directory\n");
-        print("cp       - Copy a file\n");
         print("diskread - Read disk sector 0 (test)\n");
         print("disktest - Write + read test sector\n");
         print("fatinfo  - Show FAT16 boot sector info\n");
@@ -258,19 +254,14 @@ static void shell_execute(char *cmd)
     }
     else if (strcmp(cmd, "ls") == 0)
     {
+
         if (!fat16_init())
         {
             print("\nFAT16 init failed.\n");
             return;
         }
 
-        if (!args)
-            fat16_ls();
-        else
-        {
-            if (!fat16_ls_path(args))
-                print("\nls failed.\n");
-        }
+        fat16_ls();
     }
     else if (strcmp(cmd, "cat") == 0)
     {
@@ -298,9 +289,10 @@ static void shell_execute(char *cmd)
     }
     else if (strcmp(cmd, "cd") == 0)
     {
+
         if (!args)
         {
-            print("\nUsage: cd <path>\n");
+            print("\nUsage: cd <dirname>\n");
             return;
         }
 
@@ -310,8 +302,10 @@ static void shell_execute(char *cmd)
             return;
         }
 
-        if (!fat16_cd_path(args))
+        if (!fat16_cd(args))
+        {
             print("\nDirectory not found.\n");
+        }
     }
     else if (strcmp(cmd, "disktest") == 0)
     {
@@ -373,7 +367,7 @@ static void shell_execute(char *cmd)
     {
         if (!args)
         {
-            print("\nUsage: mkdir <dir>\n       mkdir -p <path>\n");
+            print("\nUsage: mkdir <dirname>\n");
             return;
         }
 
@@ -383,22 +377,10 @@ static void shell_execute(char *cmd)
             return;
         }
 
-        if (strncmp(args, "-p ", 3) == 0)
-        {
-            const char *path = args + 3;
-
-            if (fat16_mkdir_p(path))
-                print("\nDirectories created.\n");
-            else
-                print("\nmkdir -p failed.\n");
-        }
+        if (fat16_mkdir(args))
+            print("\nDirectory created.\n");
         else
-        {
-            if (fat16_mkdir(args))
-                print("\nDirectory created.\n");
-            else
-                print("\nmkdir failed.\n");
-        }
+            print("\nmkdir failed.\n");
     }
     else if (strcmp(cmd, "rm") == 0)
     {
@@ -427,248 +409,7 @@ static void shell_execute(char *cmd)
     {
         if (!args)
         {
-            print("\nUsage: rmdir <dir>\n       rmdir -r <dir>\n");
-            return;
-        }
-
-        if (!fat16_init())
-        {
-            print("\nFAT16 init failed.\n");
-            return;
-        }
-
-        // recursive
-        if (strncmp(args, "-r ", 3) == 0)
-        {
-            const char *dir = args + 3;
-
-            int res = fat16_rmdir_r(dir);
-
-            if (res == 1)
-                print("\nDirectory removed recursively.\n");
-            else if (res == -1)
-                print("\nrmdir -r works only on directories.\n");
-            else
-                print("\nrmdir -r failed.\n");
-        }
-        else
-        {
-            int res = fat16_rmdir(args);
-
-            if (res == 1)
-                print("\nDirectory removed.\n");
-            else if (res == -1)
-                print("\nrmdir works only on directories.\n");
-            else if (res == -2)
-                print("\nDirectory not empty. Use: rmdir -r <dir>\n");
-            else
-                print("\nrmdir failed.\n");
-        }
-    }
-    else if (strcmp(cmd, "write") == 0)
-    {
-        if (!args)
-        {
-            print("\nUsage: write <file> <text>\n");
-            return;
-        }
-
-        // split args into filename + text
-        char *text = 0;
-        for (int i = 0; args[i] != '\0'; i++)
-        {
-            if (args[i] == ' ')
-            {
-                args[i] = '\0';
-                text = &args[i + 1];
-                break;
-            }
-        }
-
-        if (!text || text[0] == '\0')
-        {
-            print("\nUsage: write <file> <text>\n");
-            return;
-        }
-
-        if (!fat16_init())
-        {
-            print("\nFAT16 init failed.\n");
-            return;
-        }
-
-        int result = fat16_write(args, (uint8_t *)text, strlen(text));
-
-        if (result == 1)
-            print("\nWrite success.\n");
-        else if (result == -1)
-            print("\nCannot write into directory.\n");
-        else
-            print("\nWrite failed.\n");
-    }
-    else if (strcmp(cmd, "append") == 0)
-    {
-        if (!args)
-        {
-            print("\nUsage: append <file> <text>\n");
-            return;
-        }
-
-        // split args into filename + text
-        char *text = 0;
-        for (int i = 0; args[i] != '\0'; i++)
-        {
-            if (args[i] == ' ')
-            {
-                args[i] = '\0';
-                text = &args[i + 1];
-                break;
-            }
-        }
-
-        if (!text || text[0] == '\0')
-        {
-            print("\nUsage: append <file> <text>\n");
-            return;
-        }
-
-        if (!fat16_init())
-        {
-            print("\nFAT16 init failed.\n");
-            return;
-        }
-
-        int result = fat16_append(args, (uint8_t *)text, strlen(text));
-
-        if (result == 1)
-            print("\nAppend success.\n");
-        else if (result == -1)
-            print("\nCannot append to directory.\n");
-        else
-            print("\nAppend failed.\n");
-    }
-    else if (strcmp(cmd, "mv") == 0)
-    {
-        if (!args)
-        {
-            print("\nUsage: mv <src> <dst>\n");
-            return;
-        }
-
-        char *src = args;
-        char *dst = 0;
-
-        for (int i = 0; args[i] != '\0'; i++)
-        {
-            if (args[i] == ' ')
-            {
-                args[i] = '\0';
-                dst = &args[i + 1];
-                break;
-            }
-        }
-
-        if (!dst || dst[0] == '\0')
-        {
-            print("\nUsage: mv <src> <dst>\n");
-            return;
-        }
-
-        if (!fat16_init())
-        {
-            print("\nFAT16 init failed.\n");
-            return;
-        }
-
-        int r = fat16_mv_path(src, dst);
-
-        if (r == 1)
-            print("\nMoved.\n");
-        else if (r == -1)
-            print("\nmv failed (destination exists).\n");
-        else
-            print("\nmv failed.\n");
-    }
-    else if (strcmp(cmd, "cp") == 0)
-    {
-        if (!args)
-        {
-            print("\nUsage: cp <src> <dst>\n");
-            return;
-        }
-
-        char *src = args;
-        char *dst = 0;
-
-        for (int i = 0; args[i] != '\0'; i++)
-        {
-            if (args[i] == ' ')
-            {
-                args[i] = '\0';
-                dst = &args[i + 1];
-                break;
-            }
-        }
-
-        if (!dst || dst[0] == '\0')
-        {
-            print("\nUsage: cp <src> <dst>\n");
-            return;
-        }
-
-        if (!fat16_init())
-        {
-            print("\nFAT16 init failed.\n");
-            return;
-        }
-
-        int r = fat16_cp_path(src, dst);
-
-        if (r == 1)
-            print("\nCopied.\n");
-        else if (r == -1)
-            print("\ncp: cannot copy directory.\n");
-        else if (r == -2)
-            print("\ncp: destination exists.\n");
-        else
-            print("\ncp failed.\n");
-    }
-    else if (strcmp(cmd, "mkdir") == 0)
-    {
-        if (!args)
-        {
-            print("\nUsage: mkdir <dir>\n");
-            print("       mkdir -p <dir>\n");
-            return;
-        }
-
-        if (!fat16_init())
-        {
-            print("\nFAT16 init failed.\n");
-            return;
-        }
-
-        if (strncmp(args, "-p ", 3) == 0)
-        {
-            if (fat16_mkdir_p(args + 3))
-                print("\nDirectory path created.\n");
-            else
-                print("\nmkdir -p failed.\n");
-        }
-        else
-        {
-            if (fat16_mkdir(args))
-                print("\nDirectory created.\n");
-            else
-                print("\nmkdir failed.\n");
-        }
-    }
-    else if (strcmp(cmd, "rmdir") == 0)
-    {
-        if (!args)
-        {
             print("\nUsage: rmdir <dirname>\n");
-            print("       rmdir -r <dirname>\n");
             return;
         }
 
@@ -678,28 +419,16 @@ static void shell_execute(char *cmd)
             return;
         }
 
-        if (strncmp(args, "-r ", 3) == 0)
-        {
-            int res = fat16_rmdir_r(args + 3);
+        int result = fat16_rmdir(args);
 
-            if (res == 1)
-                print("\nDirectory removed recursively.\n");
-            else
-                print("\nrmdir -r failed.\n");
-        }
+        if (result == 1)
+            print("\nDirectory removed.\n");
+        else if (result == -1)
+            print("\nrmdir works only on directories.\n");
+        else if (result == -2)
+            print("\nrmdir failed: directory not empty.\n");
         else
-        {
-            int res = fat16_rmdir(args);
-
-            if (res == 1)
-                print("\nDirectory removed.\n");
-            else if (res == -1)
-                print("\nNot a directory.\n");
-            else if (res == -2)
-                print("\nDirectory not empty.\n");
-            else
-                print("\nrmdir failed.\n");
-        }
+            print("\nrmdir failed.\n");
     }
 
     else if (cmd[0] == '\0')
