@@ -29,13 +29,15 @@ C_SOURCES= \
 	src/drivers/ports.c\
 	src/drivers/ata.c \
 	src/memory/kmalloc.c \
+	src/memory/paging.c \
 	src/fs/fat16.c 
 
 ASM_SOURCES= \
 	src/boot/multiboot.asm \
 	src/boot/idt_load.asm \
 	src/boot/irq.asm \
-	src/boot/gdt_flush.asm
+	src/boot/gdt_flush.asm \
+	src/boot/isr.asm
 
 C_OBJECTS=$(patsubst src/%.c,$(OBJ_DIR)/%.o,$(C_SOURCES))
 ASM_OBJECTS=$(patsubst src/%.asm,$(OBJ_DIR)/%.o,$(ASM_SOURCES))

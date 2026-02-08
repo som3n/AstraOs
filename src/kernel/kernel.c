@@ -8,13 +8,16 @@
 #include "cpu/timer.h"
 #include "shell.h"
 #include "memory/kmalloc.h"
+#include "memory/paging.h"
 
-void kernel_main() {
+void kernel_main()
+{
     clear_screen();
     print("Booting AstraOS...\n");
 
     gdt_init();
     idt_init();
+    isr_install();
     pic_remap();
 
     irq_install();
@@ -22,12 +25,15 @@ void kernel_main() {
     timer_init(100);
     keyboard_init();
 
-    kmalloc_init(0x1000000);
+    extern uint32_t kernel_end;
+    kmalloc_init((uint32_t)&kernel_end + 0x1000);
 
+    paging_init();
     enable_interrupts();
 
     shell_init();
 
-    while (1) {
+    while (1)
+    {
     }
 }

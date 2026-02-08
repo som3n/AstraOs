@@ -11,6 +11,7 @@
 
 #define SHELL_BUFFER_SIZE 256
 #define HISTORY_SIZE 10
+#define MAX_ARGS 16
 
 static char history[HISTORY_SIZE][SHELL_BUFFER_SIZE];
 static int history_count = 0;
@@ -23,13 +24,19 @@ static int buffer_length = 0;
 static int prompt_x = 0;
 static int prompt_y = 0;
 
-// function prototypes
+/* ---------- Prototypes ---------- */
 static void history_add(const char *cmd);
 static void load_command(const char *cmd);
+static void redraw_command_line();
+static void shell_prompt();
+
+static int shell_tokenize(char *input, char *argv[], int max_args);
+static void shell_execute(char *cmd);
+
+/* ---------- Shell Prompt ---------- */
 
 static void shell_prompt()
 {
-
     print("\nAstraOS@");
     print(fat16_get_path());
     print("$ ");
@@ -44,9 +51,10 @@ static void shell_prompt()
     history_index = history_count;
 }
 
+/* ---------- Redraw Command Line ---------- */
+
 static void redraw_command_line()
 {
-
     // Clear current line from prompt to end
     for (int i = 0; i < VGA_WIDTH - prompt_x; i++)
     {
@@ -63,60 +71,193 @@ static void redraw_command_line()
     set_cursor_position(prompt_x + cursor_pos, prompt_y);
 }
 
-static void shell_execute(char *cmd)
-{
+/* ---------- Tokenizer ---------- */
 
-    char *args = 0;
-    for (int i = 0; cmd[i] != '\0'; i++)
+static int shell_tokenize(char *input, char *argv[], int max_args)
+{
+    int argc = 0;
+
+    while (*input && argc < max_args)
     {
-        if (cmd[i] == ' ')
-        {
-            cmd[i] = '\0';
-            args = &cmd[i + 1];
+        // Skip leading spaces
+        while (*input == ' ')
+            input++;
+
+        if (*input == '\0')
             break;
+
+        argv[argc++] = input;
+
+        // Move until next space
+        while (*input && *input != ' ')
+            input++;
+
+        if (*input == ' ')
+        {
+            *input = '\0';
+            input++;
         }
     }
 
-    if (strcmp(cmd, "help") == 0)
+    return argc;
+}
+
+/* ---------- Shell Execute ---------- */
+
+static void shell_execute(char *cmd)
+{
+    char *argv[MAX_ARGS];
+    int argc = shell_tokenize(cmd, argv, MAX_ARGS);
+
+    if (argc == 0)
+        return;
+
+    char *command = argv[0];
+
+    /* ==========================
+       BASIC SYSTEM COMMANDS
+       ========================== */
+
+    if (strcmp(command, "help") == 0)
     {
-        print("\nAvailable commands:\n");
-        print("help     - Show this help menu\n");
-        print("clear    - Clear screen\n");
-        print("about    - About AstraOS\n");
-        print("version  - Show OS version\n");
-        print("history  - Show command history\n");
-        print("uname    - System information\n");
-        print("uptime   - Show system uptime\n");
-        print("echo     - Print text\n");
-        print("sleep    - Sleep for N seconds\n");
-        print("ls       - List root directory (FAT16)\n");
-        print("pwd      - Print working directory\n");
-        print("cd       - Change directory\n");
-        print("cat      - Display file contents\n");
-        print("touch    - Create empty file\n");
-        print("mkdir    - Create directory\n");
-        print("rm       - Delete a file\n");
-        print("rmdir    - Remove empty directory\n");
-        print("diskread - Read disk sector 0 (test)\n");
-        print("disktest - Write + read test sector\n");
-        print("fatinfo  - Show FAT16 boot sector info\n");
-        print("halt     - Halt the CPU\n");
-        print("reboot   - Reboot the system\n");
+        print("\nAvailable commands:\n\n");
+
+        print("System:\n");
+        print("  help              Show this help menu\n");
+        print("  clear             Clear screen\n");
+        print("  about             About AstraOS\n");
+        print("  version           Show OS version\n");
+        print("  uname             Kernel information\n");
+        print("  uptime            Show system uptime\n");
+        print("  sleep <sec>       Sleep for N seconds\n");
+        print("  halt              Halt the CPU\n");
+        print("  reboot            Reboot the system\n\n");
+
+        print("Shell:\n");
+        print("  history           Show command history\n");
+        print("  echo <text>       Print text\n\n");
+
+        print("Disk:\n");
+        print("  diskread          Read disk sector 0 (test)\n");
+        print("  disktest          Write + read test sector\n");
+        print("  fatinfo           Show FAT16 boot sector info\n\n");
+
+        print("Filesystem (FAT16):\n");
+        print("  ls [path]         List directory\n");
+        print("  pwd               Print working directory\n");
+        print("  cd <path>         Change directory\n");
+        print("  cat <file>        Display file contents\n");
+        print("  touch <file>      Create empty file\n");
+        print("  mkdir <dir>       Create directory\n");
+        print("  mkdir -p <path>   Create directory tree\n");
+        print("  rm <file>         Delete file\n");
+        print("  rm -r <path>      Delete file/folder recursively\n");
+        print("  rmdir <dir>       Remove empty directory\n");
+        print("  rmdir -r <path>   Remove directory recursively\n");
+
+        return;
     }
-    else if (strcmp(cmd, "clear") == 0)
+
+    else if (strcmp(command, "clear") == 0)
     {
         clear_screen();
+        return;
     }
-    else if (strcmp(cmd, "about") == 0)
+
+    else if (strcmp(command, "about") == 0)
     {
-        print("\nAstraOS - A custom kernel written from scratch.\n");
+        print("\nAstraOS - Custom kernel written from scratch.\n");
         print("Developer: Somen\n");
+        return;
     }
-    else if (strcmp(cmd, "version") == 0)
+
+    else if (strcmp(command, "version") == 0)
     {
         print("\nAstraOS version 0.1\n");
+        return;
     }
-    else if (strcmp(cmd, "history") == 0)
+
+    else if (strcmp(command, "uname") == 0)
+    {
+        print("\nAstraOS Kernel 0.1 i386\n");
+        return;
+    }
+
+    else if (strcmp(command, "uptime") == 0)
+    {
+        uint32_t t = timer_get_ticks();
+        uint32_t seconds = t / 100;
+
+        print("\nUptime: ");
+        print_uint(seconds);
+        print(" seconds\n");
+        return;
+    }
+
+    else if (strcmp(command, "sleep") == 0)
+    {
+        if (argc < 2)
+        {
+            print("\nUsage: sleep <seconds>\n");
+            return;
+        }
+
+        uint32_t sec = 0;
+
+        for (int i = 0; argv[1][i] != '\0'; i++)
+        {
+            if (argv[1][i] < '0' || argv[1][i] > '9')
+            {
+                print("\nInvalid number.\n");
+                return;
+            }
+            sec = sec * 10 + (argv[1][i] - '0');
+        }
+
+        print("\nSleeping...\n");
+        timer_sleep(sec);
+        print("Done.\n");
+        return;
+    }
+
+    else if (strcmp(command, "halt") == 0)
+    {
+        print("\nSystem halting...\n");
+        cpu_halt();
+        return;
+    }
+
+    else if (strcmp(command, "reboot") == 0)
+    {
+        print("\nSystem rebooting...\n");
+        cpu_reboot();
+        return;
+    }
+
+    /* ==========================
+       SHELL COMMANDS
+       ========================== */
+
+    else if (strcmp(command, "echo") == 0)
+    {
+        if (argc < 2)
+        {
+            print("\n\n");
+            return;
+        }
+
+        print("\n");
+        for (int i = 1; i < argc; i++)
+        {
+            print(argv[i]);
+            if (i != argc - 1)
+                print(" ");
+        }
+        print("\n");
+        return;
+    }
+
+    else if (strcmp(command, "history") == 0)
     {
         print("\nCommand History:\n");
 
@@ -126,61 +267,15 @@ static void shell_execute(char *cmd)
             print(history[i]);
             print("\n");
         }
+        return;
     }
-    else if (strcmp(cmd, "uname") == 0)
-    {
-        print("\nAstraOS Kernel 0.1 i386\n");
-    }
-    else if (strcmp(cmd, "uptime") == 0)
-    {
-        uint32_t t = timer_get_ticks();
-        uint32_t seconds = t / 100;
 
-        print("\nUptime: ");
-        print_uint(seconds);
-        print(" seconds\n");
-    }
-    else if (strcmp(cmd, "echo") == 0)
-    {
-        if (args)
-        {
-            print("\n");
-            print(args);
-            print("\n");
-        }
-        else
-        {
-            print("\n\n");
-        }
-    }
-    else if (strcmp(cmd, "sleep") == 0)
-    {
-        if (!args)
-        {
-            print("\nUsage: sleep <seconds>\n");
-        }
-        else
-        {
-            uint32_t sec = 0;
+    /* ==========================
+       DISK COMMANDS
+       ========================== */
 
-            for (int i = 0; args[i] != '\0'; i++)
-            {
-                if (args[i] < '0' || args[i] > '9')
-                {
-                    print("\nInvalid number.\n");
-                    return;
-                }
-                sec = sec * 10 + (args[i] - '0');
-            }
-
-            print("\nSleeping...\n");
-            timer_sleep(sec);
-            print("Done.\n");
-        }
-    }
-    else if (strcmp(cmd, "diskread") == 0)
+    else if (strcmp(command, "diskread") == 0)
     {
-
         uint8_t *buf = (uint8_t *)kmalloc(512);
         ata_read_sector(0, buf);
 
@@ -202,10 +297,41 @@ static void shell_execute(char *cmd)
         }
 
         print("\n");
+        return;
     }
-    else if (strcmp(cmd, "fatinfo") == 0)
-    {
 
+    else if (strcmp(command, "disktest") == 0)
+    {
+        uint8_t *buf = (uint8_t *)kmalloc(512);
+
+        for (int i = 0; i < 512; i++)
+            buf[i] = 0;
+
+        buf[0] = 'A';
+        buf[1] = 'S';
+        buf[2] = 'T';
+        buf[3] = 'R';
+        buf[4] = 'A';
+
+        ata_write_sector(10, buf);
+
+        for (int i = 0; i < 512; i++)
+            buf[i] = 0;
+
+        ata_read_sector(10, buf);
+
+        print("\nRead back: ");
+        print_char(buf[0]);
+        print_char(buf[1]);
+        print_char(buf[2]);
+        print_char(buf[3]);
+        print_char(buf[4]);
+        print("\n");
+        return;
+    }
+
+    else if (strcmp(command, "fatinfo") == 0)
+    {
         if (!fat16_init())
         {
             print("\nFAT16 init failed.\n");
@@ -241,110 +367,45 @@ static void shell_execute(char *cmd)
         print_uint(info.total_sectors_32);
 
         print("\n");
+        return;
     }
-    else if (strcmp(cmd, "halt") == 0)
-    {
-        print("\nSystem halting...\n");
-        cpu_halt();
-    }
-    else if (strcmp(cmd, "reboot") == 0)
-    {
-        print("\nSystem rebooting...\n");
-        cpu_reboot();
-    }
-    else if (strcmp(cmd, "ls") == 0)
-    {
 
-        if (!fat16_init())
-        {
-            print("\nFAT16 init failed.\n");
-            return;
-        }
+    /* ==========================
+       FILESYSTEM COMMANDS
+       ========================== */
 
-        fat16_ls();
-    }
-    else if (strcmp(cmd, "cat") == 0)
-    {
-
-        if (!args)
-        {
-            print("\nUsage: cat <filename>\n");
-            return;
-        }
-
-        if (!fat16_init())
-        {
-            print("\nFAT16 init failed.\n");
-            return;
-        }
-
-        if (!fat16_cat(args))
-        {
-            print("\nFile not found.\n");
-        }
-    }
-    else if (strcmp(cmd, "pwd") == 0)
+    else if (strcmp(command, "pwd") == 0)
     {
         fat16_pwd();
+        return;
     }
-    else if (strcmp(cmd, "cd") == 0)
+
+    else if (strcmp(command, "ls") == 0)
     {
-
-        if (!args)
-        {
-            print("\nUsage: cd <dirname>\n");
-            return;
-        }
-
         if (!fat16_init())
         {
             print("\nFAT16 init failed.\n");
             return;
         }
 
-        if (!fat16_cd(args))
+        if (argc == 1)
+        {
+            fat16_ls();
+            return;
+        }
+
+        if (!fat16_ls_path(argv[1]))
         {
             print("\nDirectory not found.\n");
         }
+        return;
     }
-    else if (strcmp(cmd, "disktest") == 0)
+
+    else if (strcmp(command, "cd") == 0)
     {
-
-        uint8_t *buf = (uint8_t *)kmalloc(512);
-
-        for (int i = 0; i < 512; i++)
+        if (argc < 2)
         {
-            buf[i] = 0;
-        }
-
-        buf[0] = 'A';
-        buf[1] = 'S';
-        buf[2] = 'T';
-        buf[3] = 'R';
-        buf[4] = 'A';
-
-        ata_write_sector(10, buf);
-
-        // clear buffer and read again
-        for (int i = 0; i < 512; i++)
-            buf[i] = 0;
-
-        ata_read_sector(10, buf);
-
-        print("\nRead back: ");
-        print_char(buf[0]);
-        print_char(buf[1]);
-        print_char(buf[2]);
-        print_char(buf[3]);
-        print_char(buf[4]);
-        print("\n");
-    }
-    else if (strcmp(cmd, "touch") == 0)
-    {
-
-        if (!args)
-        {
-            print("\nUsage: touch <filename>\n");
+            print("\nUsage: cd <path>\n");
             return;
         }
 
@@ -354,20 +415,61 @@ static void shell_execute(char *cmd)
             return;
         }
 
-        if (fat16_touch(args))
+        if (!fat16_cd_path(argv[1]))
         {
+            print("\nDirectory not found.\n");
+        }
+        return;
+    }
+
+    else if (strcmp(command, "cat") == 0)
+    {
+        if (argc < 2)
+        {
+            print("\nUsage: cat <file>\n");
+            return;
+        }
+
+        if (!fat16_init())
+        {
+            print("\nFAT16 init failed.\n");
+            return;
+        }
+
+        if (!fat16_cat(argv[1]))
+        {
+            print("\nFile not found.\n");
+        }
+        return;
+    }
+
+    else if (strcmp(command, "touch") == 0)
+    {
+        if (argc < 2)
+        {
+            print("\nUsage: touch <file>\n");
+            return;
+        }
+
+        if (!fat16_init())
+        {
+            print("\nFAT16 init failed.\n");
+            return;
+        }
+
+        if (fat16_touch(argv[1]))
             print("\nFile created.\n");
-        }
         else
-        {
             print("\nTouch failed.\n");
-        }
+
+        return;
     }
-    else if (strcmp(cmd, "mkdir") == 0)
+
+    else if (strcmp(command, "mkdir") == 0)
     {
-        if (!args)
+        if (argc < 2)
         {
-            print("\nUsage: mkdir <dirname>\n");
+            print("\nUsage: mkdir [-p] <path>\n");
             return;
         }
 
@@ -377,16 +479,35 @@ static void shell_execute(char *cmd)
             return;
         }
 
-        if (fat16_mkdir(args))
+        if (strcmp(argv[1], "-p") == 0)
+        {
+            if (argc < 3)
+            {
+                print("\nUsage: mkdir -p <path>\n");
+                return;
+            }
+
+            if (fat16_mkdir_p(argv[2]))
+                print("\nDirectory tree created.\n");
+            else
+                print("\nmkdir -p failed.\n");
+
+            return;
+        }
+
+        if (fat16_mkdir(argv[1]))
             print("\nDirectory created.\n");
         else
             print("\nmkdir failed.\n");
+
+        return;
     }
-    else if (strcmp(cmd, "rm") == 0)
+
+    else if (strcmp(command, "rm") == 0)
     {
-        if (!args)
+        if (argc < 2)
         {
-            print("\nUsage: rm <filename>\n");
+            print("\nUsage: rm [-r] <file/dir>\n");
             return;
         }
 
@@ -396,20 +517,39 @@ static void shell_execute(char *cmd)
             return;
         }
 
-        int result = fat16_rm(args);
+        if (strcmp(argv[1], "-r") == 0)
+        {
+            if (argc < 3)
+            {
+                print("\nUsage: rm -r <path>\n");
+                return;
+            }
+
+            if (fat16_rm_rf(argv[2]))
+                print("\nDeleted recursively.\n");
+            else
+                print("\nrm -r failed.\n");
+
+            return;
+        }
+
+        int result = fat16_rm(argv[1]);
 
         if (result == 1)
             print("\nFile deleted.\n");
         else if (result == -1)
-            print("\nrm does not work on directories. Use rmdir.\n");
+            print("\nrm: cannot remove directory. Use rm -r.\n");
         else
             print("\nrm failed.\n");
+
+        return;
     }
-    else if (strcmp(cmd, "rmdir") == 0)
+
+    else if (strcmp(command, "rmdir") == 0)
     {
-        if (!args)
+        if (argc < 2)
         {
-            print("\nUsage: rmdir <dirname>\n");
+            print("\nUsage: rmdir [-r] <dirname>\n");
             return;
         }
 
@@ -419,29 +559,73 @@ static void shell_execute(char *cmd)
             return;
         }
 
-        int result = fat16_rmdir(args);
+        if (strcmp(argv[1], "-r") == 0)
+        {
+            if (argc < 3)
+            {
+                print("\nUsage: rmdir -r <path>\n");
+                return;
+            }
+
+            if (fat16_rm_rf(argv[2]))
+                print("\nDirectory removed recursively.\n");
+            else
+                print("\nrmdir -r failed.\n");
+
+            return;
+        }
+
+        int result = fat16_rmdir(argv[1]);
 
         if (result == 1)
             print("\nDirectory removed.\n");
         else if (result == -1)
-            print("\nrmdir works only on directories.\n");
+            print("\nrmdir: not a directory.\n");
         else if (result == -2)
-            print("\nrmdir failed: directory not empty.\n");
+            print("\nrmdir: directory not empty.\n");
         else
             print("\nrmdir failed.\n");
+
+        return;
     }
 
-    else if (cmd[0] == '\0')
+    /* ==========================
+       MEMORY TEST COMMANDS
+       ========================== */
+
+    else if (strcmp(command, "heaptest") == 0)
     {
-        // empty command
+        print("\nTesting heap...\n");
+
+        char *a = (char *)kmalloc(32);
+        char *b = (char *)kmalloc(64);
+
+        a[0] = 'A';
+        b[0] = 'B';
+
+        print("Allocated A and B\n");
+
+        kfree(a);
+        kfree(b);
+
+        print("Freed A and B\n");
+
+        return;
     }
+
+    /* ==========================
+       UNKNOWN COMMAND
+       ========================== */
+
     else
     {
         print("\nUnknown command: ");
-        print(cmd);
+        print(command);
         print("\nType 'help' for commands.\n");
     }
 }
+
+/* ---------- Shell Init ---------- */
 
 void shell_init()
 {
@@ -450,9 +634,10 @@ void shell_init()
     shell_prompt();
 }
 
+/* ---------- Keyboard Input Handler ---------- */
+
 void shell_handle_input(int key)
 {
-
     // UP ARROW (history previous)
     if (key == KEY_ARROW_UP)
     {
@@ -587,13 +772,12 @@ void shell_handle_input(int key)
     redraw_command_line();
 }
 
+/* ---------- History ---------- */
+
 static void history_add(const char *cmd)
 {
-
     if (cmd[0] == '\0')
-    {
         return;
-    }
 
     // If full, shift old commands
     if (history_count >= HISTORY_SIZE)
@@ -616,9 +800,7 @@ static void load_command(const char *cmd)
     int len = strlen(cmd);
 
     if (len >= SHELL_BUFFER_SIZE)
-    {
         len = SHELL_BUFFER_SIZE - 1;
-    }
 
     for (int i = 0; i < len; i++)
     {

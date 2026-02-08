@@ -49,5 +49,9 @@ int fat16_rm(const char *filename);
 int fat16_rmdir(const char *dirname);
 int fat16_exists(const char *name, fat16_dir_entry_t *out);
 int fat16_rmdir(const char *dirname);
+int fat16_cd_path(const char *path);
+int fat16_mkdir_p(const char *path);
+int fat16_ls_path(const char *path);
+int fat16_rm_rf(const char *path);
 
 #endif

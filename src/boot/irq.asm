@@ -45,6 +45,7 @@ IRQ 15, 47
 irq_common_stub:
     pusha
 
+    mov eax, 0
     mov ax, ds
     push eax
 
