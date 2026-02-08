@@ -94,6 +94,7 @@ static void shell_execute(char *cmd)
         print("cd       - Change directory\n");
         print("cat      - Display file contents\n");
         print("touch    - Create empty file\n");
+        print("mkdir    - Create directory\n");
         print("diskread - Read disk sector 0 (test)\n");
         print("disktest - Write + read test sector\n");
         print("fatinfo  - Show FAT16 boot sector info\n");
@@ -359,6 +360,25 @@ static void shell_execute(char *cmd)
         {
             print("\nTouch failed.\n");
         }
+    }
+    else if (strcmp(cmd, "mkdir") == 0)
+    {
+        if (!args)
+        {
+            print("\nUsage: mkdir <dirname>\n");
+            return;
+        }
+
+        if (!fat16_init())
+        {
+            print("\nFAT16 init failed.\n");
+            return;
+        }
+
+        if (fat16_mkdir(args))
+            print("\nDirectory created.\n");
+        else
+            print("\nmkdir failed.\n");
     }
 
     else if (cmd[0] == '\0')
