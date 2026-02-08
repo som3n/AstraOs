@@ -93,7 +93,9 @@ static void shell_execute(char *cmd)
         print("pwd      - Print working directory\n");
         print("cd       - Change directory\n");
         print("cat      - Display file contents\n");
+        print("touch    - Create empty file\n");
         print("diskread - Read disk sector 0 (test)\n");
+        print("disktest - Write + read test sector\n");
         print("fatinfo  - Show FAT16 boot sector info\n");
         print("halt     - Halt the CPU\n");
         print("reboot   - Reboot the system\n");
@@ -302,6 +304,63 @@ static void shell_execute(char *cmd)
             print("\nDirectory not found.\n");
         }
     }
+    else if (strcmp(cmd, "disktest") == 0)
+    {
+
+        uint8_t *buf = (uint8_t *)kmalloc(512);
+
+        for (int i = 0; i < 512; i++)
+        {
+            buf[i] = 0;
+        }
+
+        buf[0] = 'A';
+        buf[1] = 'S';
+        buf[2] = 'T';
+        buf[3] = 'R';
+        buf[4] = 'A';
+
+        ata_write_sector(10, buf);
+
+        // clear buffer and read again
+        for (int i = 0; i < 512; i++)
+            buf[i] = 0;
+
+        ata_read_sector(10, buf);
+
+        print("\nRead back: ");
+        print_char(buf[0]);
+        print_char(buf[1]);
+        print_char(buf[2]);
+        print_char(buf[3]);
+        print_char(buf[4]);
+        print("\n");
+    }
+    else if (strcmp(cmd, "touch") == 0)
+    {
+
+        if (!args)
+        {
+            print("\nUsage: touch <filename>\n");
+            return;
+        }
+
+        if (!fat16_init())
+        {
+            print("\nFAT16 init failed.\n");
+            return;
+        }
+
+        if (fat16_touch(args))
+        {
+            print("\nFile created.\n");
+        }
+        else
+        {
+            print("\nTouch failed.\n");
+        }
+    }
+
     else if (cmd[0] == '\0')
     {
         // empty command

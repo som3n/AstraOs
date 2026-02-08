@@ -58,3 +58,31 @@ void ata_read_sector(uint32_t lba, uint8_t *buffer)
         buffer[i * 2 + 1] = (uint8_t)((data >> 8) & 0xFF);
     }
 }
+
+void ata_write_sector(uint32_t lba, uint8_t *buffer) {
+
+    // Wait until not busy
+    while (inb(0x1F7) & 0x80);
+
+    outb(0x1F6, 0xE0 | ((lba >> 24) & 0x0F));
+    outb(0x1F2, 1);                 // sector count
+    outb(0x1F3, (uint8_t)(lba));     // LBA low
+    outb(0x1F4, (uint8_t)(lba >> 8));// LBA mid
+    outb(0x1F5, (uint8_t)(lba >> 16));// LBA high
+    outb(0x1F7, 0x30);              // WRITE SECTORS command
+
+    // Wait until drive is ready
+    while (!(inb(0x1F7) & 0x08));
+
+    // Write 256 words (512 bytes)
+    for (int i = 0; i < 256; i++) {
+        uint16_t word = buffer[i * 2] | (buffer[i * 2 + 1] << 8);
+        outw(0x1F0, word);
+    }
+
+    // Flush cache
+    outb(0x1F7, 0xE7);
+
+    // Wait for completion
+    while (inb(0x1F7) & 0x80);
+}
