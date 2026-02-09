@@ -8,6 +8,8 @@
 #include "memory/kmalloc.h"
 #include "fs/fat16.h"
 #include "kernel/print.h"
+#include "kernel/syscall.h"
+#include "kernel/syscall_api.h"
 
 #define SHELL_BUFFER_SIZE 256
 #define HISTORY_SIZE 10
@@ -331,6 +333,21 @@ static void shell_execute(char *cmd)
         print_char(buf[3]);
         print_char(buf[4]);
         print("\n");
+        return;
+    }
+
+    else if (strcmp(command, "syscalltest") == 0)
+    {
+        static const char msg[] = "\nHello from SYS_WRITE syscall!\n";
+
+        __asm__ __volatile__(
+            "mov $0, %%eax \n" // SYS_WRITE
+            "mov %0, %%ebx \n"
+            "int $0x80 \n"
+            :
+            : "r"(msg)
+            : "eax", "ebx");
+
         return;
     }
 

@@ -3,6 +3,8 @@
 #include "kernel/print.h"
 #include "vga.h"
 
+static isr_t interrupt_handlers[256];
+
 extern void isr0();
 extern void isr1();
 extern void isr2();
@@ -71,14 +73,26 @@ static const char *exception_messages[] = {
     "Reserved",
     "Reserved",
     "Reserved",
-    "Reserved"
-};
+    "Reserved"};
 
-void enable_interrupts() {
+void enable_interrupts()
+{
     __asm__ __volatile__("sti");
 }
 
-void isr_install() {
+static uint32_t read_cr2()
+{
+    uint32_t cr2;
+    __asm__ __volatile__("mov %%cr2, %0" : "=r"(cr2));
+    return cr2;
+}
+
+void isr_install()
+{
+    // clear handler table
+    for (int i = 0; i < 256; i++)
+        interrupt_handlers[i] = 0;
+
     idt_set_gate(0, (uint32_t)isr0);
     idt_set_gate(1, (uint32_t)isr1);
     idt_set_gate(2, (uint32_t)isr2);
@@ -111,18 +125,33 @@ void isr_install() {
     idt_set_gate(29, (uint32_t)isr29);
     idt_set_gate(30, (uint32_t)isr30);
     idt_set_gate(31, (uint32_t)isr31);
+
+    extern void isr128();
+    idt_set_gate(128, (uint32_t)isr128);
 }
-static uint32_t read_cr2()
+
+void isr_register_handler(uint8_t n, isr_t handler)
 {
-    uint32_t cr2;
-    __asm__ __volatile__("mov %%cr2, %0" : "=r"(cr2));
-    return cr2;
+    interrupt_handlers[n] = handler;
 }
 
 void isr_handler(registers_t *r)
 {
+    // If a custom handler exists (like syscall int 0x80), run it
+    if (interrupt_handlers[r->int_no] != 0)
+    {
+        isr_t handler = interrupt_handlers[r->int_no];
+        handler(r);
+        return;
+    }
+
+    // Default exception handling
     print("\n\n[EXCEPTION] ");
-    print(exception_messages[r->int_no]);
+
+    if (r->int_no < 32)
+        print(exception_messages[r->int_no]);
+    else
+        print("Unknown Interrupt");
 
     print("\nInterrupt: ");
     print_uint(r->int_no);
@@ -142,16 +171,20 @@ void isr_handler(registers_t *r)
 
         if (!(r->err_code & 0x1))
             print("Page not present ");
+
         if (r->err_code & 0x2)
             print("Write ");
         else
             print("Read ");
+
         if (r->err_code & 0x4)
             print("User-mode ");
         else
             print("Kernel-mode ");
+
         if (r->err_code & 0x8)
             print("Reserved-bit violation ");
+
         if (r->err_code & 0x10)
             print("Instruction fetch ");
     }

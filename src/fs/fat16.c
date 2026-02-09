@@ -15,6 +15,12 @@ static int fat16_get_file_size(const char *path, uint32_t *out_size);
 static int fat16_is_directory(const char *path);
 
 /* -------------------- Helpers -------------------- */
+static void fat16_copy_entry(fat16_dir_entry_t *dst, fat16_dir_entry_t *src)
+{
+    for (int i = 0; i < 32; i++)
+        ((uint8_t *)dst)[i] = ((uint8_t *)src)[i];
+}
+
 
 static uint32_t fat16_root_start_sector()
 {
@@ -837,11 +843,26 @@ int fat16_cd_path(const char *path)
 
 /* ---------------- cat ---------------- */
 
-int fat16_cat(const char *filename)
+int fat16_cat(const char *path)
 {
-    fat16_dir_entry_t entry;
+    if (!path || path[0] == '\0')
+        return 0;
 
-    if (!fat16_find_entry(current_dir_cluster, filename, &entry))
+    char abs[128];
+    fat16_normalize_path(current_path, path, abs);
+
+    char parent_path[128];
+    char filename[32];
+
+    if (!fat16_split_path(abs, parent_path, filename))
+        return 0;
+
+    uint16_t parent_cluster;
+    if (!fat16_resolve_absolute(parent_path, &parent_cluster))
+        return 0;
+
+    fat16_dir_entry_t entry;
+    if (!fat16_find_entry(parent_cluster, filename, &entry))
         return 0;
 
     if (entry.attr & 0x10)
@@ -1703,7 +1724,7 @@ int fat16_cp(const char *src, const char *dst)
         return 0;
 
     if (fat16_is_directory(src))
-        return 0; // cp directory not supported yet
+        return 0; // directory copy not supported yet
 
     uint32_t file_size;
     if (!fat16_get_file_size(src, &file_size))
@@ -1715,10 +1736,18 @@ int fat16_cp(const char *src, const char *dst)
 
     uint32_t read_size;
     if (!fat16_read_file(src, buf, file_size + 4, &read_size))
+    {
+        kfree(buf);
         return 0;
+    }
 
     if (read_size != file_size)
+    {
+        kfree(buf);
         return 0;
+    }
+
+    int result = 0;
 
     // If dst is a directory, copy inside it
     if (fat16_is_directory(dst))
@@ -1733,7 +1762,10 @@ int fat16_cp(const char *src, const char *dst)
         char src_name[32];
 
         if (!fat16_split_path(abs_src, parent_src, src_name))
+        {
+            kfree(buf);
             return 0;
+        }
 
         char final_dst[128];
         strcpy(final_dst, abs_dst);
@@ -1743,10 +1775,15 @@ int fat16_cp(const char *src, const char *dst)
 
         strcat(final_dst, src_name);
 
-        return fat16_write_file(final_dst, buf, file_size);
+        result = fat16_write_file(final_dst, buf, file_size);
+    }
+    else
+    {
+        result = fat16_write_file(dst, buf, file_size);
     }
 
-    return fat16_write_file(dst, buf, file_size);
+    kfree(buf);
+    return result;
 }
 
 int fat16_mv(const char *src, const char *dst)
@@ -1754,49 +1791,104 @@ int fat16_mv(const char *src, const char *dst)
     if (!src || !dst)
         return 0;
 
-    // If source is directory, not supported yet
     if (fat16_is_directory(src))
-        return 0;
+        return 0; // directory mv not supported yet
 
-    if (!fat16_cp(src, dst))
-        return 0;
-
-    // delete original file
     char abs_src[128];
     fat16_normalize_path(current_path, src, abs_src);
 
-    char parent_path[128];
-    char filename[32];
+    // split src -> parent + filename
+    char src_parent[128];
+    char src_name[32];
 
-    if (!fat16_split_path(abs_src, parent_path, filename))
+    if (!fat16_split_path(abs_src, src_parent, src_name))
         return 0;
 
-    uint16_t parent_cluster;
-    if (!fat16_resolve_absolute(parent_path, &parent_cluster))
+    uint16_t src_parent_cluster;
+    if (!fat16_resolve_absolute(src_parent, &src_parent_cluster))
         return 0;
 
-    // remove original entry
-    uint32_t entry_sector;
-    uint32_t entry_offset;
-    fat16_dir_entry_t entry;
+    // find src entry location
+    uint32_t src_sector;
+    uint32_t src_offset;
+    fat16_dir_entry_t src_entry;
 
-    if (!fat16_find_entry_location(parent_cluster, filename,
-                                   &entry_sector, &entry_offset, &entry))
+    if (!fat16_find_entry_location(src_parent_cluster, src_name,
+                                   &src_sector, &src_offset, &src_entry))
         return 0;
 
-    if (entry.attr & 0x10)
+    if (src_entry.attr & 0x10)
         return 0;
 
-    if (entry.first_cluster_low != 0)
-        fat16_free_cluster_chain(entry.first_cluster_low);
+    // normalize destination
+    char abs_dst[128];
+    fat16_normalize_path(current_path, dst, abs_dst);
 
-    uint8_t sector[512];
-    ata_read_sector(entry_sector, sector);
+    // if dst is directory -> put file inside dst
+    if (fat16_is_directory(abs_dst))
+    {
+        char final_dst[128];
+        strcpy(final_dst, abs_dst);
 
-    fat16_dir_entry_t *disk_entry = (fat16_dir_entry_t *)&sector[entry_offset];
-    disk_entry->name[0] = 0xE5;
+        if (strcmp(final_dst, "/") != 0)
+            strcat(final_dst, "/");
 
-    ata_write_sector(entry_sector, sector);
+        strcat(final_dst, src_name);
+
+        strcpy(abs_dst, final_dst);
+    }
+
+    // split dst -> parent + new filename
+    char dst_parent[128];
+    char dst_name[32];
+
+    if (!fat16_split_path(abs_dst, dst_parent, dst_name))
+        return 0;
+
+    uint16_t dst_parent_cluster;
+    if (!fat16_resolve_absolute(dst_parent, &dst_parent_cluster))
+        return 0;
+
+    // check if dst already exists
+    fat16_dir_entry_t existing;
+    if (fat16_find_entry(dst_parent_cluster, dst_name, &existing))
+        return 0; // destination already exists
+
+    // find free entry in dst parent
+    uint32_t free_sector;
+    uint32_t free_offset;
+
+    if (!fat16_find_free_dir_entry(dst_parent_cluster, &free_sector, &free_offset))
+        return 0;
+
+    // write new entry into destination directory
+    uint8_t buf[512];
+    ata_read_sector(free_sector, buf);
+
+    fat16_dir_entry_t *new_entry = (fat16_dir_entry_t *)&buf[free_offset];
+
+    fat16_copy_entry(new_entry, &src_entry);
+
+    // update filename
+    char fatname[11];
+    fat16_format_filename(dst_name, fatname);
+
+    for (int j = 0; j < 8; j++)
+        new_entry->name[j] = fatname[j];
+
+    for (int j = 0; j < 3; j++)
+        new_entry->ext[j] = fatname[8 + j];
+
+    ata_write_sector(free_sector, buf);
+
+    // delete old entry
+    uint8_t secbuf[512];
+    ata_read_sector(src_sector, secbuf);
+
+    fat16_dir_entry_t *old_entry = (fat16_dir_entry_t *)&secbuf[src_offset];
+    old_entry->name[0] = 0xE5;
+
+    ata_write_sector(src_sector, secbuf);
 
     return 1;
 }

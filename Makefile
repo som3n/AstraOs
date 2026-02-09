@@ -17,6 +17,8 @@ C_SOURCES= \
 	src/kernel/shell.c \
 	src/kernel/string.c \
 	src/kernel/print.c \
+	src/kernel/syscall.c \
+	src/kernel/syscall_api.c \
 	src/cpu/idt.c \
 	src/cpu/isr.c \
 	src/cpu/irq.c \

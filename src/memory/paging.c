@@ -39,6 +39,4 @@ void paging_init()
 
     // Enable paging
     paging_enable((uint32_t)page_directory);
-
-    print("\nPaging enabled successfully.\n");
 }

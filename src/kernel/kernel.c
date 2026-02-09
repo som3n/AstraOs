@@ -9,6 +9,7 @@
 #include "shell.h"
 #include "memory/kmalloc.h"
 #include "memory/paging.h"
+#include "kernel/syscall.h"
 
 void kernel_main()
 {
@@ -19,7 +20,6 @@ void kernel_main()
     idt_init();
     isr_install();
     pic_remap();
-
     irq_install();
 
     timer_init(100);
@@ -29,11 +29,11 @@ void kernel_main()
     kmalloc_init((uint32_t)&kernel_end + 0x1000);
 
     paging_init();
+    syscall_init();
+
     enable_interrupts();
 
     shell_init();
 
-    while (1)
-    {
-    }
+    while (1) {}
 }

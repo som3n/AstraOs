@@ -1,3 +1,5 @@
+[bits 32]
+
 global irq0
 global irq1
 global irq2
@@ -17,6 +19,7 @@ global irq15
 
 extern irq_handler
 
+
 %macro IRQ 2
 irq%1:
     cli
@@ -25,6 +28,8 @@ irq%1:
     jmp irq_common_stub
 %endmacro
 
+
+; IRQs 0-15 mapped to IDT entries 32-47
 IRQ 0, 32
 IRQ 1, 33
 IRQ 2, 34
@@ -41,6 +46,7 @@ IRQ 12, 44
 IRQ 13, 45
 IRQ 14, 46
 IRQ 15, 47
+
 
 irq_common_stub:
     pusha

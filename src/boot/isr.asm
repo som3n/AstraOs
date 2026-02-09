@@ -1,3 +1,5 @@
+[bits 32]
+
 global isr0
 global isr1
 global isr2
@@ -31,7 +33,14 @@ global isr29
 global isr30
 global isr31
 
+global isr128
+global isr_common_stub
+
 extern isr_handler
+
+; ---------------------------
+; ISR Macros
+; ---------------------------
 
 %macro ISR_NOERR 1
 isr%1:
@@ -47,6 +56,11 @@ isr%1:
     push dword %1
     jmp isr_common_stub
 %endmacro
+
+
+; ---------------------------
+; CPU Exceptions 0-31
+; ---------------------------
 
 ISR_NOERR 0
 ISR_NOERR 1
@@ -83,6 +97,22 @@ ISR_NOERR 28
 ISR_NOERR 29
 ISR_NOERR 30
 ISR_NOERR 31
+
+
+; ---------------------------
+; Syscall ISR 128
+; ---------------------------
+
+isr128:
+    cli
+    push dword 0
+    push dword 128
+    jmp isr_common_stub
+
+
+; ---------------------------
+; Common ISR Stub
+; ---------------------------
 
 isr_common_stub:
     pusha
