@@ -11,7 +11,7 @@ static uint16_t current_dir_cluster = 0; // 0 = root
 static char current_path[128] = "/";
 
 static int fat16_read_file(const char *path, uint8_t *out_buf, uint32_t max_size, uint32_t *out_size);
-static int fat16_get_file_size(const char *path, uint32_t *out_size);
+static int fat16_get_file_size_internal(const char *path, uint32_t *out_size);
 static int fat16_is_directory(const char *path);
 
 /* -------------------- Helpers -------------------- */
@@ -874,6 +874,14 @@ int fat16_cat(const char *path)
 
     print("\n");
 
+    // Empty file: FAT16 commonly stores first_cluster_low = 0.
+    if (remaining == 0)
+        return 1;
+
+    // Non-empty file must have a valid data cluster (>= 2).
+    if (cluster < 2)
+        return 0;
+
     while (cluster < 0xFFF8)
     {
         uint32_t sector_num = fat16_cluster_to_sector(cluster);
@@ -1595,7 +1603,7 @@ int fat16_append_file(const char *path, const uint8_t *data, uint32_t size)
     return 1;
 }
 
-static int fat16_get_file_size(const char *path, uint32_t *out_size)
+static int fat16_get_file_size_internal(const char *path, uint32_t *out_size)
 {
     if (!path || path[0] == '\0')
         return 0;
@@ -1686,6 +1694,16 @@ static int fat16_read_file(const char *path, uint8_t *out_buf, uint32_t max_size
     uint16_t cluster = entry.first_cluster_low;
     uint32_t read = 0;
 
+    if (remaining == 0)
+    {
+        *out_size = 0;
+        return 1;
+    }
+
+    // Non-empty file must have a valid data cluster (>= 2).
+    if (cluster < 2)
+        return 0;
+
     uint8_t sector[512];
 
     while (cluster < 0xFFF8)
@@ -1727,7 +1745,7 @@ int fat16_cp(const char *src, const char *dst)
         return 0; // directory copy not supported yet
 
     uint32_t file_size;
-    if (!fat16_get_file_size(src, &file_size))
+    if (!fat16_get_file_size_internal(src, &file_size))
         return 0;
 
     uint8_t *buf = (uint8_t *)kmalloc(file_size + 4);
@@ -1890,5 +1908,224 @@ int fat16_mv(const char *src, const char *dst)
 
     ata_write_sector(src_sector, secbuf);
 
+    return 1;
+}
+
+int fat16_filesize(const char *path, uint32_t *out_size)
+{
+    return fat16_get_file_size_internal(path, out_size);
+}
+
+int fat16_list_dir(const char *path, char *out, uint32_t out_size, uint32_t *out_written)
+{
+    if (!out || out_size == 0 || !out_written)
+        return 0;
+
+    out[0] = '\0';
+    *out_written = 0;
+
+    if (!path || path[0] == '\0')
+        return 0;
+
+    char abs[128];
+    fat16_normalize_path(current_path, path, abs);
+
+    uint16_t dir_cluster;
+    if (!fat16_resolve_absolute(abs, &dir_cluster))
+        return 0;
+
+    uint8_t sector[512];
+    uint32_t written = 0;
+
+    // Append "name\n" if it fits; keeps output NUL terminated.
+    #define APPEND_LINE(name_buf)                                                     \
+        do                                                                            \
+        {                                                                             \
+            const char *s__ = (name_buf);                                             \
+            uint32_t i__ = 0;                                                         \
+            while (s__[i__] != '\0')                                                  \
+            {                                                                         \
+                if (written + 2 >= out_size)                                          \
+                    goto done;                                                        \
+                out[written++] = s__[i__++];                                          \
+            }                                                                         \
+            if (written + 2 >= out_size)                                              \
+                goto done;                                                            \
+            out[written++] = '\n';                                                    \
+            out[written] = '\0';                                                      \
+        } while (0)
+
+    if (dir_cluster == 0)
+    {
+        uint32_t root_start = fat16_root_start_sector();
+        uint32_t root_sectors = fat16_root_dir_sectors();
+
+        for (uint32_t s = 0; s < root_sectors; s++)
+        {
+            ata_read_sector(root_start + s, sector);
+
+            for (int i = 0; i < 512; i += 32)
+            {
+                fat16_dir_entry_t *entry = (fat16_dir_entry_t *)&sector[i];
+
+                if (entry->name[0] == 0x00)
+                    goto done;
+                if ((uint8_t)entry->name[0] == 0xE5)
+                    continue;
+                if (entry->attr == 0x0F)
+                    continue;
+
+                char filename[13];
+                fat16_entry_to_name(entry, filename);
+                APPEND_LINE(filename);
+            }
+        }
+
+        goto done;
+    }
+
+    uint16_t cluster = dir_cluster;
+    while (cluster < 0xFFF8)
+    {
+        uint32_t start_sector = fat16_cluster_to_sector(cluster);
+
+        for (int s = 0; s < bpb.sectors_per_cluster; s++)
+        {
+            ata_read_sector(start_sector + s, sector);
+
+            for (int i = 0; i < 512; i += 32)
+            {
+                fat16_dir_entry_t *entry = (fat16_dir_entry_t *)&sector[i];
+
+                if (entry->name[0] == 0x00)
+                    goto done;
+                if ((uint8_t)entry->name[0] == 0xE5)
+                    continue;
+                if (entry->attr == 0x0F)
+                    continue;
+
+                char filename[13];
+                fat16_entry_to_name(entry, filename);
+                APPEND_LINE(filename);
+            }
+        }
+
+        cluster = fat16_get_fat_entry(cluster);
+    }
+
+done:
+    #undef APPEND_LINE
+    *out_written = written;
+    return 1;
+}
+
+int fat16_read_at(const char *path, uint32_t offset, uint8_t *out, uint32_t len, uint32_t *out_read)
+{
+    if (!out_read)
+        return 0;
+    *out_read = 0;
+
+    if (!path || path[0] == '\0')
+        return 0;
+
+    // len==0 is allowed (existence check)
+    if (len > 0 && !out)
+        return 0;
+
+    char abs[128];
+    fat16_normalize_path(current_path, path, abs);
+
+    // root is a directory, not a readable file
+    if (strcmp(abs, "/") == 0)
+        return 0;
+
+    char parent_path[128];
+    char filename[32];
+
+    if (!fat16_split_path(abs, parent_path, filename))
+        return 0;
+
+    uint16_t parent_cluster;
+    if (!fat16_resolve_absolute(parent_path, &parent_cluster))
+        return 0;
+
+    fat16_dir_entry_t entry;
+    if (!fat16_find_entry(parent_cluster, filename, &entry))
+        return 0;
+
+    if (entry.attr & 0x10)
+        return 0;
+
+    uint32_t file_size = entry.file_size;
+    if (offset >= file_size)
+    {
+        *out_read = 0;
+        return 1;
+    }
+
+    uint32_t remaining = file_size - offset;
+    if (len < remaining)
+        remaining = len;
+
+    if (remaining == 0)
+    {
+        *out_read = 0;
+        return 1;
+    }
+
+    uint16_t cluster = entry.first_cluster_low;
+    if (cluster < 2)
+        return 0;
+
+    uint32_t cluster_size_bytes = (uint32_t)bpb.sectors_per_cluster * 512;
+
+    // Skip clusters until we reach the offset.
+    uint32_t skip = offset;
+    while (skip >= cluster_size_bytes)
+    {
+        uint16_t next = fat16_get_fat_entry(cluster);
+        if (next >= 0xFFF8)
+            return 0;
+        cluster = next;
+        skip -= cluster_size_bytes;
+    }
+
+    uint32_t copied = 0;
+    uint8_t sector[512];
+
+    while (cluster < 0xFFF8 && remaining > 0)
+    {
+        uint32_t sector_start = fat16_cluster_to_sector(cluster);
+
+        for (int s = 0; s < bpb.sectors_per_cluster && remaining > 0; s++)
+        {
+            ata_read_sector(sector_start + (uint32_t)s, sector);
+
+            uint32_t start_i = 0;
+            if (skip > 0)
+            {
+                start_i = skip;
+                if (start_i >= 512)
+                {
+                    skip -= 512;
+                    continue;
+                }
+                skip = 0;
+            }
+
+            for (uint32_t i = start_i; i < 512 && remaining > 0; i++)
+            {
+                out[copied++] = sector[i];
+                remaining--;
+            }
+        }
+
+        if (remaining == 0)
+            break;
+
+        cluster = fat16_get_fat_entry(cluster);
+    }
+
+    *out_read = copied;
     return 1;
 }

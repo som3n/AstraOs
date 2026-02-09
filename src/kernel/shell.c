@@ -10,6 +10,7 @@
 #include "kernel/print.h"
 #include "kernel/syscall.h"
 #include "kernel/syscall_api.h"
+#include "kernel/exec.h"
 
 #define SHELL_BUFFER_SIZE 256
 #define HISTORY_SIZE 10
@@ -138,6 +139,9 @@ static void shell_execute(char *cmd)
         print("Shell:\n");
         print("  history           Show command history\n");
         print("  echo <text>       Print text\n\n");
+
+        print("Programs:\n");
+        print("  run <elf>         Run an ELF32 program (e.g. /BIN/INIT.ELF)\n\n");
 
         print("Disk:\n");
         print("  diskread          Read disk sector 0 (test)\n");
@@ -276,6 +280,36 @@ static void shell_execute(char *cmd)
         return;
     }
 
+    else if (strcmp(command, "run") == 0)
+    {
+        if (argc < 2)
+        {
+            print("\nUsage: run <elf-path> [args...]\n");
+            return;
+        }
+
+        if (!fat16_init())
+        {
+            print("\nFAT16 init failed.\n");
+            return;
+        }
+
+        // Pass argv[1..] down to userland as argc/argv.
+        int uargc = argc - 1;
+        const char **uargv = (const char **)&argv[1];
+        int code = kernel_exec_elf_argv(argv[1], uargc, uargv);
+        if (code < 0)
+        {
+            print("\nrun failed.\n");
+            return;
+        }
+
+        print("\n[run] exit code ");
+        print_uint((uint32_t)code);
+        print("\n");
+        return;
+    }
+
     /* ==========================
        DISK COMMANDS
        ========================== */
@@ -319,12 +353,15 @@ static void shell_execute(char *cmd)
         buf[3] = 'R';
         buf[4] = 'A';
 
-        ata_write_sector(10, buf);
+        // WARNING: writing to low LBAs can corrupt the FAT filesystem.
+        // Use a sector near the end of the disk image as a safer scratch area.
+        uint32_t scratch_lba = 20479; // last sector of a 10MB (20480 sector) image
+        ata_write_sector(scratch_lba, buf);
 
         for (int i = 0; i < 512; i++)
             buf[i] = 0;
 
-        ata_read_sector(10, buf);
+        ata_read_sector(scratch_lba, buf);
 
         print("\nRead back: ");
         print_char(buf[0]);

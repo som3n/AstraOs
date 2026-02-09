@@ -12,6 +12,10 @@
 #include "kernel/syscall.h"
 #include "cpu/tss.h"
 #include "cpu/usermode.h"
+#include "kernel/print.h"
+#include "kernel/elf32.h"
+#include "string.h"
+#include "kernel/exec.h"
 
 void kernel_main()
 {
@@ -36,11 +40,19 @@ void kernel_main()
     paging_init();
     syscall_init();
 
-    extern void switch_to_user_mode();
-
-    switch_to_user_mode();
-
     enable_interrupts();
+
+    int exit_code = kernel_exec_elf("/BIN/INIT.ELF");
+    if (exit_code < 0)
+    {
+        print("\nELF load failed: /BIN/INIT.ELF\n");
+    }
+    else
+    {
+        print("\n[USERMODE] exited with code ");
+        print_uint((uint32_t)exit_code);
+        print("\n");
+    }
 
     shell_init();
 

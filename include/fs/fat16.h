@@ -65,4 +65,10 @@ int fat16_append_file(const char *path, const uint8_t *data, uint32_t size);
 int fat16_cp(const char *src, const char *dst);
 int fat16_mv(const char *src, const char *dst);
 
+// Read up to `len` bytes from file at `path` starting at `offset`.
+// Returns 1 on success, 0 on failure. `out_read` receives bytes read.
+int fat16_read_at(const char *path, uint32_t offset, uint8_t *out, uint32_t len, uint32_t *out_read);
+int fat16_filesize(const char *path, uint32_t *out_size);
+int fat16_list_dir(const char *path, char *out, uint32_t out_size, uint32_t *out_written);
+
 #endif

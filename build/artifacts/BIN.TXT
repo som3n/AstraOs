@@ -1,0 +1,10 @@
+ Volume in drive : has no label
+ Volume Serial Number is 48EA-7A57
+Directory for ::/BIN
+
+.            <DIR>     2026-02-09  21:20 
+..           <DIR>     2026-02-09  21:20 
+INIT     ELF      5720 2026-02-09  21:33 
+        3 files               5 720 bytes
+                         10 438 656 bytes free
+
