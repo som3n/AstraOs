@@ -127,7 +127,8 @@ void isr_install()
     idt_set_gate(31, (uint32_t)isr31);
 
     extern void isr128();
-    idt_set_gate(128, (uint32_t)isr128);
+    // Syscalls must be callable from ring 3: set IDT gate DPL=3 (0xEE).
+    idt_set_gate_flags(128, (uint32_t)isr128, 0xEE);
 }
 
 void isr_register_handler(uint8_t n, isr_t handler)

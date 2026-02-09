@@ -10,6 +10,8 @@
 #include "memory/kmalloc.h"
 #include "memory/paging.h"
 #include "kernel/syscall.h"
+#include "cpu/tss.h"
+#include "cpu/usermode.h"
 
 void kernel_main()
 {
@@ -28,12 +30,21 @@ void kernel_main()
     extern uint32_t kernel_end;
     kmalloc_init((uint32_t)&kernel_end + 0x1000);
 
+    uint32_t kernel_stack_top = (uint32_t)&kernel_end + 0x4000;
+    tss_install(kernel_stack_top);
+
     paging_init();
     syscall_init();
+
+    extern void switch_to_user_mode();
+
+    switch_to_user_mode();
 
     enable_interrupts();
 
     shell_init();
 
-    while (1) {}
+    while (1)
+    {
+    }
 }

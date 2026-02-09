@@ -23,8 +23,10 @@ C_SOURCES= \
 	src/cpu/isr.c \
 	src/cpu/irq.c \
 	src/cpu/gdt.c \
+	src/cpu/tss.c \
 	src/cpu/power.c \
 	src/cpu/timer.c \
+	src/cpu/usermode.c \
 	src/drivers/vga.c \
 	src/drivers/pic.c \
 	src/drivers/keyboard.c \
@@ -32,14 +34,17 @@ C_SOURCES= \
 	src/drivers/ata.c \
 	src/memory/kmalloc.c \
 	src/memory/paging.c \
-	src/fs/fat16.c 
+	src/fs/fat16.c \
+	src/user/init.c
 
 ASM_SOURCES= \
 	src/boot/multiboot.asm \
 	src/boot/idt_load.asm \
 	src/boot/irq.asm \
 	src/boot/gdt_flush.asm \
-	src/boot/isr.asm
+	src/boot/tss_flush.asm \
+	src/boot/isr.asm \
+	src/boot/userlib.asm
 
 C_OBJECTS=$(patsubst src/%.c,$(OBJ_DIR)/%.o,$(C_SOURCES))
 ASM_OBJECTS=$(patsubst src/%.asm,$(OBJ_DIR)/%.o,$(ASM_SOURCES))
@@ -55,6 +60,7 @@ dirs:
 	mkdir -p $(ISO_DIR)/boot/grub
 	mkdir -p $(OBJ_DIR)/memory
 	mkdir -p $(OBJ_DIR)/fs
+	mkdir -p $(OBJ_DIR)/user
 
 # Compile C files into object files
 $(OBJ_DIR)/%.o: src/%.c | dirs

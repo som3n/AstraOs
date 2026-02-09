@@ -31,11 +31,11 @@ void paging_init()
     // Fill first page table (identity map first 4MB)
     for (int i = 0; i < 1024; i++)
     {
-        first_page_table[i] = (i * PAGE_SIZE) | 3; // present + rw
+        first_page_table[i] = (i * PAGE_SIZE) | 7; // present + rw + user
     }
 
     // Link first page table into directory
-    page_directory[0] = ((uint32_t)first_page_table) | 3;
+    page_directory[0] = ((uint32_t)first_page_table) | 7;
 
     // Enable paging
     paging_enable((uint32_t)page_directory);

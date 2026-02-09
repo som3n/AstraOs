@@ -20,12 +20,16 @@ idt_ptr_t idt_ptr;
 
 extern void idt_load(uint32_t);
 
-void idt_set_gate(int n, uint32_t handler){
+void idt_set_gate_flags(int n, uint32_t handler, uint8_t flags){
     idt[n].base_low = handler & 0xFFFF;
     idt[n].selector = 0x08;
     idt[n].zero = 0;
-    idt[n].flags = 0x8E;
+    idt[n].flags = flags;
     idt[n].base_high = (handler >> 16) & 0xFFFF;
+}
+
+void idt_set_gate(int n, uint32_t handler){
+    idt_set_gate_flags(n, handler, 0x8E);
 }
 
 void idt_init() {
