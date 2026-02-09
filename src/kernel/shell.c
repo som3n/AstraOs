@@ -148,6 +148,10 @@ static void shell_execute(char *cmd)
         print("  cd <path>         Change directory\n");
         print("  cat <file>        Display file contents\n");
         print("  touch <file>      Create empty file\n");
+        print("  write             Write text to file \n");
+        print("  append            Append text to file \n");
+        print("  cp <src> <dst>    Copy file\n");
+        print("  mv <src> <dst>    Move/Rename file\n");
         print("  mkdir <dir>       Create directory\n");
         print("  mkdir -p <path>   Create directory tree\n");
         print("  rm <file>         Delete file\n");
@@ -585,6 +589,119 @@ static void shell_execute(char *cmd)
             print("\nrmdir: directory not empty.\n");
         else
             print("\nrmdir failed.\n");
+
+        return;
+    }
+
+    else if (strcmp(command, "write") == 0)
+    {
+        if (argc < 3)
+        {
+            print("\nUsage: write <file> <text>\n");
+            return;
+        }
+
+        char *filename = argv[1];
+
+        // build full text from argv[2] onwards
+        char text[256];
+        text[0] = '\0';
+
+        for (int i = 2; i < argc; i++)
+        {
+            strcat(text, argv[i]);
+            if (i != argc - 1)
+                strcat(text, " ");
+        }
+
+        if (!fat16_init())
+        {
+            print("\nFAT16 init failed.\n");
+            return;
+        }
+
+        if (fat16_write_file(filename, (uint8_t *)text, strlen(text)))
+            print("\nFile written.\n");
+        else
+            print("\nWrite failed.\n");
+
+        return;
+    }
+
+    else if (strcmp(command, "append") == 0)
+    {
+        if (argc < 3)
+        {
+            print("\nUsage: append <file> <text>\n");
+            return;
+        }
+
+        char *filename = argv[1];
+
+        char text[256];
+        text[0] = '\0';
+
+        for (int i = 2; i < argc; i++)
+        {
+            strcat(text, argv[i]);
+            if (i != argc - 1)
+                strcat(text, " ");
+        }
+
+        if (!fat16_init())
+        {
+            print("\nFAT16 init failed.\n");
+            return;
+        }
+
+        if (fat16_append_file(filename, (uint8_t *)text, strlen(text)))
+            print("\nAppended.\n");
+        else
+            print("\nAppend failed.\n");
+
+        return;
+    }
+
+    else if (strcmp(command, "cp") == 0)
+    {
+        if (argc < 3)
+        {
+            print("\nUsage: cp <src> <dst>\n");
+            return;
+        }
+
+        if (!fat16_init())
+        {
+            print("\nFAT16 init failed.\n");
+            return;
+        }
+
+        if (fat16_cp(argv[1], argv[2]))
+            print("\nCopied.\n");
+        else
+            print("\ncp failed.\n");
+
+        return;
+    }
+
+    else if (strcmp(command, "mv") == 0)
+    {
+        if (argc < 3)
+        {
+            print("\nUsage: mv <src> <dst>\n");
+            return;
+        }
+
+        if (!fat16_init())
+        {
+            print("\nFAT16 init failed.\n");
+            return;
+        }
+
+        if (fat16_mv(argv[1], argv[2]))
+            print("\nMoved.\n");
+        else
+            print("\nmv failed.\n");
 
         return;
     }

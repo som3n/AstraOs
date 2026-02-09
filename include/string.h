@@ -4,5 +4,6 @@
 int strlen(const char *str);
 int strcmp(const char *a, const char *b);
 void strcpy(char *dest, const char *src);
+char* strcat(char *dest, const char *src);
 
 #endif
